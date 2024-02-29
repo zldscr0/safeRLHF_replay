@@ -1,556 +1,287 @@
-<!-- markdownlint-disable first-line-h1 -->
-<!-- markdownlint-disable html -->
+### SafeRLHF复现日志
 
-<div align="center">
-  <img src="images/PKU-Beaver-logo-wide.svg" width="80%"/>
-</div>
-
-<h1 align="center">Constrained Value-Aligned LLM via Safe RLHF</h1>
-
-Beaver is a highly modular open-source RLHF framework developed by the PKU-Alignment team at Peking University.
-It aims to provide training data and a reproducible code pipeline for alignment research, especially constrained alignment LLM research via Safe RLHF methods.
-
-The key features of Beaver are:
-
-- Support **SFT**, **RLHF** and **Safe RLHF** training for popular pre-trained models: [LLaMA](https://ai.facebook.com/blog/large-language-model-llama-meta-ai), [OPT](https://arxiv.org/abs/2205.01068), [Baichuan](https://huggingface.co/baichuan-inc/Baichuan-7B), etc.
-- Provide a large human-labeled dataset **(up to 1M pairs)** including both helpful and harmless preferences to support reproducible RLHF research.
-- Support training for Reward Model & Cost Model, and provide pre-trained checkpoints.
-- Support customized parameters and datasets for SFT and RLHF.
-- Provide multi-scale metrics for safety constraints verification, e.g., BIG-bench, GPT-4 Evaluation.
-
-## **🦫 What's New?**  <!-- omit in toc -->
-
-- **📄 `2023/10/19`:** We've released our [**Safe RLHF paper**](https://arxiv.org/abs/2310.12773) on arXiv, detailing our new safe alignment algorithm and its implementation.
-- **🚀 `2023/07/10`:** We're delighted to announce the open-sourcing of [**Beaver-7B**](https://huggingface.co/PKU-Alignment/beaver-7b-v1.0) as the first milestone of the Safe RLHF training series, complemented by the corresponding [**RewardModel-7B**]((https://huggingface.co/PKU-Alignment/beaver-7b-v1.0-reward)) and [**CostModel-7B**]((https://huggingface.co/PKU-Alignment/beaver-7b-v1.0-cost)) checkpoints on 🤗 Hugging Face:
-  - **Beaver-7B:** [PKU-Alignment/beaver-7b-v1.0](https://huggingface.co/PKU-Alignment/beaver-7b-v1.0)
-  - **RewardModel-7B:** [PKU-Alignment/beaver-7b-v1.0-reward](https://huggingface.co/PKU-Alignment/beaver-7b-v1.0-reward)
-  - **CostModel-7B:** [PKU-Alignment/beaver-7b-v1.0-cost](https://huggingface.co/PKU-Alignment/beaver-7b-v1.0-cost)
-- **🔥 `2023/07/10`:** We extend the open-source safety preference dataset, [**PKU-Alignment/PKU-SafeRLHF**](https://huggingface.co/datasets/PKU-Alignment/PKU-SafeRLHF), which now contains over 300k examples. (See also section [PKU-SafeRLHF-Dataset](#pku-saferlhf-dataset))
-- **⚙ `2023/07/05`:** We enhanced our support for Chinese pre-training models and incorporated additional open-source Chinese datasets. (See also sections [Chinese Support (中文支持)](#chinese-support-中文支持) and [Custom Datasets (自定义数据集)](#custom-datasets))
-- **⭐️ `2023/05/15`:** First release of the Safe RLHF pipeline, evaluation results, and training code.
-
-### Table of Contents  <!-- omit in toc -->
-
-- [Constrained Value Alignment via Safe RLHF](#constrained-value-alignment-via-safe-rlhf)
-- [Comparison with Other RLHF Libraries](#comparison-with-other-rlhf-libraries)
-- [PKU-SafeRLHF-Dataset](#pku-saferlhf-dataset)
-  - [PKU-SafeRLHF-10K](#pku-saferlhf-10k)
-  - [PKU-SafeRLHF-1M](#pku-saferlhf-1m)
-- [Why "Beaver"](#why-beaver)
-- [Beaver vs. Alpaca](#beaver-vs-alpaca)
-- [Installation](#installation)
-- [Training](#training)
-- [Custom Datasets](#custom-datasets)
-- [Inference](#inference)
-  - [Interactive CLI Demo](#interactive-cli-demo)
-  - [Interactive Arena](#interactive-arena)
-- [Chinese Support (中文支持)](#chinese-support-中文支持)
-- [Benchmark and Evaluation](#benchmark-and-evaluation)
-  - [Arena via Reward and Cost Models](#arena-via-reward-and-cost-models)
-  - [BIG-bench](#big-bench)
-  - [GPT-4 Evaluation](#gpt-4-evaluation)
-- [Future Plans](#future-plans)
-- [Citation](#citation)
-- [PKU-Alignment Team](#pku-alignment-team)
-- [License](#license)
-
-## Constrained Value Alignment via Safe RLHF
-
-Reinforcement Learning from Human Feedback: reward maximization via preference learning
-
-<div align="center">
-  <img src="images/rl-formulation.svg" width="40%"/>
-</div>
-
-Safe Reinforcement Learning from Human Feedback: constrained reward maximization via preference learning
-
-<div align="center">
-  <img src="images/safe-rl-formulation.svg" width="55%"/>
-</div>
-
-where $R (\cdot)$ and $C (\cdot)$ are reward and cost functions respectively. They are neural networks known as human proxies trained on human preferences.
-
-<div align="center">
-  <img src="images/preference-learning.svg" width="90%"/>
-</div>
-
-The ultimate goal is to find a model $\pi_{\theta}$ that is both helpful (high reward) and harmless (low cost).
-
-<div align="center">
-  <img src="images/safe-alignment.png" width="90%"/>
-</div>
-
-## Comparison with Other RLHF Libraries
-
-Compare with other frameworks supporting RLHF, `safe-rlhf` is the first framework to support all stages from SFT to RLHF and Evaluation.
-In addition, `safe-rlhf` is the first framework that takes safety preference under consideration during the RLHF stage.
-It holds a more theoretical guarantee for constrained parameter searching in the policy space.
-
-|                                                                                                        |             SFT              | Preference Model<sup>[1](#perference-model)</sup> Training | RLHF  | Safe RLHF | PTX Loss | Evaluation |      Backend      |
-| :----------------------------------------------------------------------------------------------------: | :--------------------------: | :--------------------------------------------------------: | :---: | :-------: | :------: | :--------: | :---------------: |
-|                  [Beaver](https://github.com/PKU-Alignment/safe-rlhf)</br>(Safe-RLHF)                  |              ✔️               |                             ✔️                              |   ✔️   |     ✔️     |    ✔️     |     ✔️      |     DeepSpeed     |
-|                                [trlX](https://github.com/CarperAI/trlx)                                |              ✔️               |             ❌<sup>[2](#trlx-rm-example)</sup>              |   ✔️   |     ❌     |    ❌     |     ❌      | Accelerate / NeMo |
-| [DeepSpeed-Chat](https://github.com/microsoft/DeepSpeedExamples/tree/HEAD/applications/DeepSpeed-Chat) |              ✔️               |                             ✔️                              |   ✔️   |     ❌     |    ✔️     |     ❌      |     DeepSpeed     |
-|                         [Colossal-AI](https://github.com/hpcaitech/ColossalAI)                         |              ✔️               |                             ✔️                              |   ✔️   |     ❌     |    ✔️     |     ❌      |    ColossalAI     |
-|                         [AlpacaFarm](https://github.com/tatsu-lab/alpaca_farm)                         | ❌<sup>[3](#alpaca-sft)</sup> |                             ✔️                              |   ✔️   |     ❌     |    ❌     |     ✔️      |    Accelerate     |
-
-<sup>
-  <a name="perference-model">1.</a> In the context of RLHF, the "Preference Model" is identified as the "Reward Model". And the "Preference Model" refers to both the "Reward Model" and the "Cost Model" in Safe RLHF.
-</sup><br/>
-<sup>
-  <a name="trlx-rm-example">2.</a> There is an example for reward model training in the examples directory in the trlX repository. However it is not officially supported and is not integrated into the trlX library.
-</sup><br/>
-<sup>
-  <a name="alpaca-sft">3.</a> The supervised fine-tuning support for Alpaca is provided in the <a href="https://github.com/tatsu-lab/stanford_alpaca">tatsu-lab/stanford_alpaca</a> repository.
-</sup>
-
-## PKU-SafeRLHF-Dataset
-
-The `PKU-SafeRLHF` dataset is a human-labeled dataset containing both performance and safety preferences.
-It includes constraints in over ten dimensions, such as insults, immorality, crime, emotional harm, and privacy, among others.
-These constraints are designed for fine-grained value alignment in RLHF technology.
-
-To facilitate multi-round fine-tuning, we will release the initial parameter weights, required datasets, and training parameters for each round.
-This ensures reproducibility in scientific and academic research.
-The dataset will be released gradually through rolling updates.
-
-The dataset is available on Hugging Face: [PKU-Alignment/PKU-SafeRLHF](https://huggingface.co/datasets/PKU-Alignment/PKU-SafeRLHF).
-
-### PKU-SafeRLHF-10K
-
-`PKU-SafeRLHF-10K` is a subset of `PKU-SafeRLHF` that contains the first round of Safe RLHF training data with 10K instances, including safety preferences.
-You can find it on Hugging Face: [PKU-Alignment/PKU-SafeRLHF-10K](https://huggingface.co/datasets/PKU-Alignment/PKU-SafeRLHF-10K).
-
-### PKU-SafeRLHF-1M
-
-We will gradually release the full Safe-RLHF datasets, which include **1M _human-labeled_ pairs** for both helpful and harmless preferences.
-
-## Why "Beaver"
-
-Beaver is a large language model based on [LLaMA](https://ai.facebook.com/blog/large-language-model-llama-meta-ai), trained using `safe-rlhf`.
-It is developed upon the foundation of the [Alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html) model, by collecting human preference data related to helpfulness and harmlessness and employing the Safe RLHF technique for training.
-While maintaining the helpful performance of Alpaca, Beaver significantly improves its harmlessness.
-
-> Beavers are known as the "natural dam engineers" as they are adept at using branches, shrubs, rocks, and soil to build dams and small wooden houses, creating wetland environments suitable for other creatures to inhabit, making them an indispensable part of the ecosystem. To ensure the safety and reliability of Large Language Models (LLMs) while accommodating a wide range of values across different populations, the Peking University team has named their open-source model "Beaver" and aims to build a dam for LLMs through the Constrained Value Alignment (CVA) technology. This technology enables fine-grained labeling of information and, combined with secure reinforcement learning methods, significantly reduces model bias and discrimination, thereby enhancing the model's safety. Analogous to the role of beavers in the ecosystem, the Beaver model will provide crucial support for the development of large language models and make positive contributions to the sustainable development of artificial intelligence technology.
-
-## Beaver vs. Alpaca
-
-Following the evaluation methodology of the [Vicuna](https://lmsys.org/blog/2023-03-30-vicuna) model, we utilized GPT-4 to evaluate Beaver. The results indicate that, compared to Alpaca, Beaver exhibits significant improvements in multiple dimensions related to safety.
-
-![Arena-Demo](images/arena-demo.gif)
-
-<div align="center">
-  <img src="images/evaluation.png" width="60%"/>
-</div>
-
-Significant distribution shift for safety preferences after utilizing the Safe RLHF pipeline on the Alpaca-7B model.
-
-<table width="100%" cellspacing="0" cellpadding="0">
-  <tr align="center" valign="middle">
-    <td width="50%">
-      <img src="images/reward-distribution.png" width="100%"/>
-    </td>
-    <td width="50%">
-      <img src="images/cost-distribution.png" width="100%"/>
-    </td>
-  </tr>
-</table>
-
-## Installation
-
-Clone the source code from GitHub:
+#### 一些问题
 
 ```bash
-git clone https://github.com/PKU-Alignment/safe-rlhf.git
-cd safe-rlhf
+conda create -n py311 python=3.11
+conda activate py311
+python -m pip install -r requirements.txt
+export WANDB_API_KEY="$MY_KEY"#wandb官网获取
 ```
 
-**Native Runner:** Setup a conda environment using [`conda`](https://github.com/conda/conda) / [`mamba`](https://github.com/mamba-org/mamba):
+##### 1.Tokenizer
 
-```bash
-conda env create --file conda-recipe.yaml  # or `mamba env create --file conda-recipe.yaml`
+```
+line 822, in from_pretrained
+    raise ValueError(
+ValueError: Tokenizer class LLaMATokenizer does not exist or is not currently imported.
 ```
 
-This will automatically setup all dependencies.
+修改 `../llama-7b-hf/tokenizer_config.json`文件为：
 
-**Containerized Runner:** Other than using the native machine with conda isolation, as an alternative, you can also use docker images to configure the environment.
-
-Firstly, please follow [NVIDIA Container Toolkit: Installation Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) and [NVIDIA Docker: Installation Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker) to setup `nvidia-docker`.
-Then you can run:
-
-```bash
-make docker-run
 ```
-
-This command will build and start a docker container installed with proper dependencies.
-The host path `/` will be mapped to `/host` and the current working directory will be mapped to `/workspace` inside the container.
-
-## Training
-
-`safe-rlhf` supports a complete pipeline from Supervised Fine-Tuning (SFT) to preference model training to RLHF alignment training.
-
-0. Follow the instructions in section [Installation](#installation) to setup the training environment properly.
-
-```bash
-conda activate safe-rlhf
-export WANDB_API_KEY="..."  # your W&B API key here
-```
-
-or
-
-```bash
-make docker-run
-export WANDB_API_KEY="..."  # your W&B API key here
-```
-
-1. Supervised Fine-Tuning (SFT)
-
-```bash
-bash scripts/sft.sh \
-    --model_name_or_path <your-model-name-or-checkpoint-path> \
-    --output_dir output/sft
-```
-
-NOTE: You may need to update some of the parameters in the script according to your machine setup, such as the number of GPUs for training, the training batch size, etc.
-
-2. Value Models (reward model & cost model)
-
-```bash
-bash scripts/reward-model.sh \
-    --model_name_or_path output/sft \
-    --output_dir output/rm
-```
-
-```bash
-bash scripts/cost-model.sh \
-    --model_name_or_path output/sft \
-    --output_dir output/cm
-```
-
-3. RLHF (Optional)
-
-```bash
-bash scripts/ppo.sh \
-    --actor_model_name_or_path output/sft \
-    --reward_model_name_or_path output/rm \
-    --output_dir output/ppo
-```
-
-4. Safe-RLHF
-
-```bash
-bash scripts/ppo-lag.sh \
-    --actor_model_name_or_path output/sft \
-    --reward_model_name_or_path output/rm \
-    --cost_model_name_or_path output/cm \
-    --output_dir output/ppo-lag
-```
-
-An example of commands to run the whole pipeline with [LLaMA-7B](https://ai.facebook.com/blog/large-language-model-llama-meta-ai):
-
-```bash
-conda activate safe-rlhf
-bash scripts/sft.sh --model_name_or_path ~/models/llama-7b --output_dir output/sft
-bash scripts/reward-model.sh --model_name_or_path output/sft --output_dir output/rm
-bash scripts/cost-model.sh --model_name_or_path output/sft --output_dir output/cm
-bash scripts/ppo-lag.sh \
-    --actor_model_name_or_path output/sft \
-    --reward_model_name_or_path output/rm \
-    --cost_model_name_or_path output/cm \
-    --output_dir output/ppo-lag
-```
-
-#### Computational Requirements  <!-- omit in toc -->
-
-All training processes listed above are tested with [LLaMA-7B](https://ai.facebook.com/blog/large-language-model-llama-meta-ai) on a cloud server with 8 x NVIDIA A800-80GB GPUs.
-
-Users, who do not have enough GPU memory resources, can enable [DeepSpeed ZeRO-Offload](https://www.deepspeed.ai/tutorials/zero-offload) to alleviate the peak GPU memory usage.
-
-All training scripts can pass with an extra option `--offload` (defaults to `none`, i.e., disable ZeRO-Offload) to offload the tensors (parameters and/or optimizer states) to CPU. For example:
-
-```bash
-bash scripts/sft.sh \
-    --model_name_or_path ~/models/llama-7b \
-    --output_dir output/sft \
-    --offload all  # or `parameter` or `optimizer`
-```
-
-For multi-node settings, users can refer to the [DeepSpeed: Resource Configuration (multi-node)](https://www.deepspeed.ai/getting-started/#resource-configuration-multi-node) documentation for more details. Here is an example to start the training process on 4 nodes (each has 8 GPUs):
-
-```text
-# myhostfile
-worker-1 slots=8
-worker-2 slots=8
-worker-3 slots=8
-worker-4 slots=8
-```
-
-Then launch the training scripts with:
-
-```bash
-bash scripts/sft.sh \
-    --hostfile myhostfile \
-    --model_name_or_path ~/models/llama-7b \
-    --output_dir output/sft
-```
-
-## Custom Datasets
-
-`safe-rlhf` provides an abstraction to create datasets for all of the Supervised Fine-Tuning, preference model training, and RL training stages.
-
-```python
-class RawSample(TypedDict, total=False):
-    """Raw sample type.
-
-    For SupervisedDataset, should provide (input, answer) or (dialogue).
-    For PreferenceDataset, should provide (input, answer, other_answer, better).
-    For SafetyPreferenceDataset, should provide (input, answer, other_answer, safer, is_safe, is_other_safe).
-    For PromptOnlyDataset, should provide (input).
-    """
-
-    # Texts
-    input: NotRequired[str]  # either `input` or `dialogue` should be provided
-    """User input text."""
-    answer: NotRequired[str]
-    """Assistant answer text."""
-    other_answer: NotRequired[str]
-    """Other assistant answer text via resampling."""
-    dialogue: NotRequired[list[str]]  # either `input` or `dialogue` should be provided
-    """Dialogue history."""
-
-    # Flags
-    better: NotRequired[bool]
-    """Whether ``answer`` is better than ``other_answer``."""
-    safer: NotRequired[bool]
-    """Whether ``answer`` is safer than ``other_answer``."""
-    is_safe: NotRequired[bool]
-    """Whether ``answer`` is safe."""
-    is_other_safe: NotRequired[bool]
-    """Whether ``other_answer`` is safe."""
-```
-
-Here is an example to implement a custom dataset (see [safe_rlhf/datasets/raw](safe_rlhf/datasets/raw) for more examples):
-
-```python
-import argparse
-from datasets import load_dataset
-from safe_rlhf.datasets import RawDataset, RawSample, parse_dataset
-
-
-class MyRawDataset(RawDataset):
-    NAME = 'my-dataset-name'
-
-    def __init__(self, path=None) -> None:
-        # Load a dataset from Hugging Face
-        self.data = load_dataset(path or 'my-organization/my-dataset')['train']
-
-    def __getitem__(self, index: int) -> RawSample:
-        data = self.data[index]
-        # Construct a `RawSample` dictionary from your custom dataset item
-        return RawSample(
-            input=data['col1'],
-            answer=data['col2'],
-            other_answer=data['col3'],
-            better=float(data['col4']) > float(data['col5']),
-            ...
-        )
-
-    def __len__(self) -> int:
-        return len(self.data)  # dataset size
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(...)
-    parser.add_argument(
-        '--datasets',
-        type=parse_dataset,
-        nargs='+',
-        metavar='DATASET[:PROPORTION[:PATH]]',
-    )
-    ...
-    return parser.parse_args()
-
-
-def main():
-    args = parse_arguments()
-    ...
-
-
-if __name__ == '__main__':
-    main()
-```
-
-Then you can pass this dataset to the training scripts as:
-
-```bash
-python3 train.py --datasets my-dataset-name
-```
-
-You may also pass multiple datasets with optionally additional dataset proportions (separated by a colon `:`). For example:
-
-```bash
-python3 train.py --datasets alpaca:0.75 my-dataset-name:0.5
-```
-
-This will use randomly split 75% of the Stanford Alpaca dataset and 50% of your custom dataset.
-
-In addition, the dataset argument can also be followed by a local path (separated by a colon `:`) if you have already cloned the dataset repository from Hugging Face.
-
-```bash
-git lfs install
-git clone https://huggingface.co/datasets/my-organization/my-dataset ~/path/to/my-dataset/repository
-python3 train.py --datasets alpaca:0.75 my-dataset-name:0.5:~/path/to/my-dataset/repository
-```
-
-NOTE: The dataset class must be imported before the training script begins to parse the command line arguments.
-
-## Inference
-
-### Interactive CLI Demo
-
-```bash
-python3 -m safe_rlhf.serve.cli --model_name_or_path output/sft  # or output/ppo-lag
-```
-
-### Interactive Arena
-
-```bash
-python3 -m safe_rlhf.serve.arena --red_corner_model_name_or_path output/sft --blue_corner_model_name_or_path output/ppo-lag
-```
-
-![Arena-Demo](images/arena-demo.gif)
-
-## Chinese Support (中文支持)
-
-The Safe-RLHF pipeline supports not only the LLaMA model family but also other pre-trained models such as [Baichuan](https://huggingface.co/baichuan-inc/Baichuan-7B), [InternLM](https://huggingface.co/internlm/internlm-7b), etc. that offer better support for Chinese. You just need to update the path to the pre-trained model in the training and inference code.
-
-> Safe-RLHF 管道不仅仅支持 LLaMA 系列模型，它也支持其他一些对中文支持更好的预训练模型，例如 [Baichuan](https://huggingface.co/baichuan-inc/Baichuan-7B) 和 [InternLM](https://huggingface.co/internlm/internlm-7b) 等。你只需要在训练和推理的代码中更新预训练模型的路径即可。
-
-```bash
-# SFT training
-bash scripts/sft.sh --model_name_or_path baichuan-inc/Baichuan-7B --output_dir output/baichuan-sft
-
-# Inference
-python3 -m safe_rlhf.serve.cli --model_name_or_path output/baichuan-sft
-```
-
-<div align="center">
-  <img src="images/chinese-support.png" width="100%"/>
-</div>
-
-In the meantime, we've added support for Chinese datasets such as the [Firefly](https://huggingface.co/datasets/YeungNLP/firefly-train-1.1M) and [MOSS series](https://huggingface.co/datasets/fnlp/moss-003-sft-data) to our [raw-datasets](safe_rlhf/datasets/raw). You only need to change the dataset path in the training code to use the corresponding dataset for fine-tuning the Chinese pre-training model:
-
-> 同时，我们也在 [raw-datasets](safe_rlhf/datasets/raw) 中增加了支持一些中文数据集，例如 [Firefly](https://huggingface.co/datasets/YeungNLP/firefly-train-1.1M) 和 [MOSS 系列](https://huggingface.co/datasets/fnlp/moss-003-sft-data)等。在训练代码中更改数据集路径，你就可以使用相应的数据集来微调中文预训练模型：
-
-```diff
-# scripts/sft.sh
--	--train_datasets alpaca \
-+	--train_datasets firefly \
-```
-
-For instructions on how to add custom datasets, please refer to section [Custom Datasets](#custom-datasets).
-
-> 关于如何添加自定义数据集的方法，请参阅章节 [Custom Datasets (自定义数据集)](#custom-datasets)。
-
-## Benchmark and Evaluation
-
-### Arena via Reward and Cost Models
-
-```bash
-scripts/arena-evaluation.sh \
-    --red_corner_model_name_or_path output/sft \
-    --blue_corner_model_name_or_path output/ppo-lag \
-    --reward_model_name_or_path output/rm \
-    --cost_model_name_or_path output/cm \
-    --output_dir output/arena-evaluation
-```
-
-### BIG-bench
-
-```bash
-# Install BIG-bench
-git clone https://github.com/google/BIG-bench.git
-(
-    cd BIG-bench
-    python3 setup.py sdist
-    python3 -m pip install -e .
-)
-
-# BIG-bench evaluation
-python3 -m safe_rlhf.evaluate.bigbench \
-    --model_name_or_path output/ppo-lag \
-    --task_name <BIG-bench-task-name>
-```
-
-### GPT-4 Evaluation
-
-```bash
-# Install OpenAI Python API
-pip3 install openai
-export OPENAI_API_KEY="..."  # your OpenAI API key here
-
-# GPT-4 evaluation
-python3 -m safe_rlhf.evaluate.gpt4 \
-    --red_corner_model_name_or_path output/sft \
-    --blue_corner_model_name_or_path output/ppo-lag
-```
-
-## Future Plans
-
-- [X] Beaver-7B checkpoint is released on Hugging Face.
-- [X] Release Safe RLHF paper preprint.
-- [ ] We will gradually release the full Safe-RLHF datasets.
-- [ ] Train Larger LLM with Safe-RLHF.
-- [ ] Support memory-efficient training, such as LoRA, PEFT, etc.
-
-## Citation
-
-If you find Safe-RLHF useful or use Safe-RLHF (model, code, dataset, etc.) in your research, please cite it in your publications.
-
-```bibtex
-@article{safe-rlhf,
-  title={Safe RLHF: Safe Reinforcement Learning from Human Feedback},
-  author={Dai, Josef and Pan, Xuehai and Sun, Ruiyang and Ji, Jiaming and Xu, Xinbo and Liu, Mickel and Wang, Yizhou and Yang, Yaodong},
-  journal={arXiv preprint arXiv:2310.12773},
-  year={2023}
+{
+    "bos_token": "<s>",
+    "eos_token": "</s>",
+    "model_max_length": 1000000000000000019884624838656,
+    "tokenizer_class": "LlamaTokenizer",
+    "unk_token": "<unk>"
 }
 ```
 
-## PKU-Alignment Team
+##### 2.alpaca数据集无法下载的问题
 
-All students below contributed equally and the order is determined alphabetically:
+```
+File "/home/bzx_yjy/code/safe-rlhf/safe_rlhf/datasets/base.py", line 163, in load
+    return cls(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/bzx_yjy/code/safe-rlhf/safe_rlhf/datasets/raw/alpaca.py", line 31, in __init__
+    self.data = load_dataset(path or 'tatsu-lab/alpaca', split='train')
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bzx_yjy/miniconda3/envs/py311/lib/python3.11/site-packages/datasets/load.py", line 2548, in load_dataset
+    builder_instance = load_dataset_builder(
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bzx_yjy/miniconda3/envs/py311/lib/python3.11/site-packages/datasets/load.py", line 2220, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bzx_yjy/miniconda3/envs/py311/lib/python3.11/site-packages/datasets/load.py", line 1871, in dataset_module_factory
+    raise e1 from None
+  File "/home/bzx_yjy/miniconda3/envs/py311/lib/python3.11/site-packages/datasets/load.py", line 1805, in dataset_module_factory
+    raise ConnectionError(f"Couldn't reach '{path}' on the Hub ({type(e).__name__})")
+ConnectionError: Couldn't reach 'tatsu-lab/alpaca' on the Hub (ConnectionError)
+```
 
-- [Juntao Dai](https://github.com/calico-1226)
-- [Jiaming Ji](https://github.com/zmsn-2077)
-- [Xuehai Pan](https://github.com/XuehaiPan)
-- [Ruiyang Sun](https://github.com/rockmagma02)
+解决方法：
 
-All advised by [Yizhou Wang](https://cfcs.pku.edu.cn/english/people/faculty/yizhouwang/index.htm) and [Yaodong Yang](https://www.yangyaodong.com/).
-Acknowledge: We appreciate [Ms. Yi Qu](https://www.xiaohongshu.com/user/profile/58ee23c96a6a695050dcf276) for designing the Beaver logo.
+[这可能是全网最好解决中国hugggingface.co无法访问问题 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/627688602)
 
-### Acknowledgment  <!-- omit in toc -->
+```python
+export HF_ENDPOINT=https://hf-mirror.com
+bash scripts/sft.sh --model_name_or_path ../llama-7b-hf --output_dir output/sft
+```
 
-This repository benefits from [LLaMA](https://ai.facebook.com/blog/large-language-model-llama-meta-ai), [Stanford Alpaca](https://github.com/tatsu-lab/stanford_alpaca), [DeepSpeed](https://github.com/microsoft/DeepSpeed), and [DeepSpeed-Chat](https://github.com/microsoft/DeepSpeedExamples/tree/HEAD/applications/DeepSpeed-Chat).
-Thanks for their wonderful works and their efforts for democratizing the LLM research.
-Safe-RLHF and its related assets are built and open-sourced with love 🤗❤️.
+也可以将数据集下载到本地加载(修改`alpaca.py`)
 
-This work is supported and funded by the Peking University.
+```
+vim /home/bzx_yjy/code/safe-rlhf/safe_rlhf/datasets/raw/alpaca.py
+```
 
-<table width="100%" cellspacing="0" cellpadding="0">
-  <tr align="center" valign="middle">
-    <td width="40%">
-      <a href="https://www.ai.pku.edu.cn/">
-        <img src="images/pku-ai.png" width="100%"/>
-      </a>
-    </td>
-    <td width="60%">
-      <a href="https://cfcs.pku.edu.cn/">
-        <img src="images/pku-cfcs.png" width="100%"/>
-      </a>
-    </td>
-  </tr>
-</table>
+将alpaca.py中的load dataset的路径改为 `self.data = load_dataset('/home/bzx_yjy/code/alpaca')['train']`
 
-## License
+##### 3.gcc版本过高编译失败
 
-Safe-RLHF is released under Apache License 2.0.
+[替换系统 gcc 为 anaconda 安装的 gcc - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/662208106)
+
+```
+conda install -c conda-forge gcc_linux-64==8.5.0
+conda install -c conda-forge gxx_impl_linux-64==8.5.0
+```
+
+
+
+##### 4.git-lfs下载（无管理员权限）+ llama模型下载
+
+```bash
+tar -zxvf  git-lfs-linux-amd64-v3.4.1.tar.gz
+vi git-lfs-3.4.1/install.sh #修改下路径
+. git-lfs-3.4.1/install.sh
+```
+
+下载llama模型：
+
+```
+git clone https://gitee.com/modelee/llama-7b-hf.git
+```
+
+
+
+有权限的话直接装：
+
+```
+git lfs install
+```
+
+
+
+##### 5.AttributeError: 'DeepSpeedCPUAdam' object has no attribute 'ds_opt_adam'
+
+[Deepspeed多卡多机ZeRo-3训练踩的坑 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/642819809)
+
+```
+vim /home/bzx_yjy/code/safe-rlhf/safe_rlhf/trainers/supervised_trainer.py
+```
+
+
+
+##### 6.
+
+这是什么操作……
+
+[Installed CUDA version 12.1 does not match the version torch was compiled with 11.7_attributeerror: 'deepspeedcpuadam' object has no a-CSDN博客](https://blog.csdn.net/gs80140/article/details/130848792)
+
+
+
+##### 7.
+
+
+
+[[BUG\]exits with return code = -9 · Issue #4181 · microsoft/DeepSpeed (github.com)](https://github.com/microsoft/DeepSpeed/issues/4181)
+
+这个错误会发生在开启deepspeed时（`--offload` all/parameter/optimizer)，原因应该是OOM，不开的话显存又会爆。
+
+
+
+最后解决方法是：在2张3090的平台上不管怎么调batch_size和--offload的参数都没法训练，所以在4张3090的平台上训练(SFT)。
+
+```
+$bash scripts/sft.sh --model_name_or_path ../llama-7b-hf --output_dir output/sft --offload all
+
+log:
+
++++ dirname scripts/sft.sh
+++ cd scripts
+++ pwd
++ SCRIPT_DIR=/home/webace/Tmp/test0229/safe-rlhf/scripts
+++ dirname /home/webace/Tmp/test0229/safe-rlhf/scripts
++ ROOT_DIR=/home/webace/Tmp/test0229/safe-rlhf
++ export PYTHONPATH=/home/webace/Tmp/test0229/safe-rlhf
++ PYTHONPATH=/home/webace/Tmp/test0229/safe-rlhf
++ export LOGLEVEL=WARNING
++ LOGLEVEL=WARNING
++ MODEL_NAME_OR_PATH=huggyllama/llama-7b
++ OUTPUT_DIR=/home/webace/Tmp/test0229/safe-rlhf/output/sft
++ unset HOSTFILE
++ ZERO_STAGE=3
++ OFFLOAD=none
++ [[ 6 -gt 0 ]]
++ arg=--model_name_or_path
++ shift
++ case "${arg}" in
++ MODEL_NAME_OR_PATH=../llama-7b-hf
++ shift
++ [[ 4 -gt 0 ]]
++ arg=--output_dir
++ shift
++ case "${arg}" in
++ OUTPUT_DIR=output/sft
++ shift
++ [[ 2 -gt 0 ]]
++ arg=--offload
++ shift
++ case "${arg}" in
++ OFFLOAD=all
++ shift
++ [[ 0 -gt 0 ]]
++ mkdir -p output/sft
+++ cd output/sft
+++ pwd
++ OUTPUT_DIR=/home/webace/Tmp/test0229/safe-rlhf/output/sft
++ [[ ! -f /home/webace/Tmp/test0229/safe-rlhf/output/sft/.gitignore ]]
++ cp -f scripts/sft.sh /home/webace/Tmp/test0229/safe-rlhf/output/sft/script.sh
++ [[ -z '' ]]
++ export WANDB_MODE=offline
++ WANDB_MODE=offline
++ MASTER_PORT_START=10000
++ MASTER_PORT_END=65535
+++ shuf
+++ head -n 1
+++ comm -23 /dev/fd/63 /dev/fd/62
++++ seq 10000 65535
++++ sort
++++ ss -Htan
++++ awk '{ print $4 }'
++++ awk -F : '{ print $NF }'
++++ sort -u
++ MASTER_PORT=29451
++ DEEPSPEED_ARGS=()
++ [[ -n '' ]]
++ DEEPSPEED_ARGS+=("--master_port" "${MASTER_PORT}")
++ exec
+++ tee /home/webace/Tmp/test0229/safe-rlhf/output/sft/stdout.log
+++ tee /home/webace/Tmp/test0229/safe-rlhf/output/sft/stderr.log
++ deepspeed --master_port 29451 --module safe_rlhf.finetune --train_datasets alpaca --model_name_or_path ../llama-7b-hf --max_length 512 --trust_remote_code True --epochs 3 --per_device_train_batch_size 1 --per_device_eval_batch_size 1 --gradient_accumulation_steps 8 --gradient_checkpointing --learning_rate 2e-5 --lr_scheduler_type cosine --lr_warmup_ratio 0.03 --weight_decay 0.0 --seed 42 --output_dir /home/webace/Tmp/test0229/safe-rlhf/output/sft --log_type wandb --log_project Safe-RLHF-SFT --zero_stage 3 --offload all --bf16 True --tf32 True
+[2024-02-29 19:29:25,377] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2024-02-29 19:29:25,864] [WARNING] [runner.py:202:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
+[2024-02-29 19:29:25,864] [INFO] [runner.py:568:main] cmd = /data/Development/anaconda3/envs/py311/bin/python -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMCwgMSwgMiwgM119 --master_addr=127.0.0.1 --master_port=29451 --module --enable_each_rank_log=None safe_rlhf.finetune --train_datasets alpaca --model_name_or_path ../llama-7b-hf --max_length 512 --trust_remote_code True --epochs 3 --per_device_train_batch_size 1 --per_device_eval_batch_size 1 --gradient_accumulation_steps 8 --gradient_checkpointing --learning_rate 2e-5 --lr_scheduler_type cosine --lr_warmup_ratio 0.03 --weight_decay 0.0 --seed 42 --output_dir /home/webace/Tmp/test0229/safe-rlhf/output/sft --log_type wandb --log_project Safe-RLHF-SFT --zero_stage 3 --offload all --bf16 True --tf32 True
+[2024-02-29 19:29:27,811] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2024-02-29 19:29:28,328] [INFO] [launch.py:145:main] WORLD INFO DICT: {'localhost': [0, 1, 2, 3]}
+[2024-02-29 19:29:28,328] [INFO] [launch.py:151:main] nnodes=1, num_local_procs=4, node_rank=0
+[2024-02-29 19:29:28,328] [INFO] [launch.py:162:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0, 1, 2, 3]})
+[2024-02-29 19:29:28,328] [INFO] [launch.py:163:main] dist_world_size=4
+[2024-02-29 19:29:28,328] [INFO] [launch.py:165:main] Setting CUDA_VISIBLE_DEVICES=0,1,2,3
+[2024-02-29 19:29:28,329] [INFO] [launch.py:253:main] process 1149977 spawned with command: ['/data/Development/anaconda3/envs/py311/bin/python', '-u', '-m', 'safe_rlhf.finetune', '--local_rank=0', '--train_datasets', 'alpaca', '--model_name_or_path', '../llama-7b-hf', '--max_length', '512', '--trust_remote_code', 'True', '--epochs', '3', '--per_device_train_batch_size', '1', '--per_device_eval_batch_size', '1', '--gradient_accumulation_steps', '8', '--gradient_checkpointing', '--learning_rate', '2e-5', '--lr_scheduler_type', 'cosine', '--lr_warmup_ratio', '0.03', '--weight_decay', '0.0', '--seed', '42', '--output_dir', '/home/webace/Tmp/test0229/safe-rlhf/output/sft', '--log_type', 'wandb', '--log_project', 'Safe-RLHF-SFT', '--zero_stage', '3', '--offload', 'all', '--bf16', 'True', '--tf32', 'True']
+[2024-02-29 19:29:28,329] [INFO] [launch.py:253:main] process 1149978 spawned with command: ['/data/Development/anaconda3/envs/py311/bin/python', '-u', '-m', 'safe_rlhf.finetune', '--local_rank=1', '--train_datasets', 'alpaca', '--model_name_or_path', '../llama-7b-hf', '--max_length', '512', '--trust_remote_code', 'True', '--epochs', '3', '--per_device_train_batch_size', '1', '--per_device_eval_batch_size', '1', '--gradient_accumulation_steps', '8', '--gradient_checkpointing', '--learning_rate', '2e-5', '--lr_scheduler_type', 'cosine', '--lr_warmup_ratio', '0.03', '--weight_decay', '0.0', '--seed', '42', '--output_dir', '/home/webace/Tmp/test0229/safe-rlhf/output/sft', '--log_type', 'wandb', '--log_project', 'Safe-RLHF-SFT', '--zero_stage', '3', '--offload', 'all', '--bf16', 'True', '--tf32', 'True']
+[2024-02-29 19:29:28,330] [INFO] [launch.py:253:main] process 1149979 spawned with command: ['/data/Development/anaconda3/envs/py311/bin/python', '-u', '-m', 'safe_rlhf.finetune', '--local_rank=2', '--train_datasets', 'alpaca', '--model_name_or_path', '../llama-7b-hf', '--max_length', '512', '--trust_remote_code', 'True', '--epochs', '3', '--per_device_train_batch_size', '1', '--per_device_eval_batch_size', '1', '--gradient_accumulation_steps', '8', '--gradient_checkpointing', '--learning_rate', '2e-5', '--lr_scheduler_type', 'cosine', '--lr_warmup_ratio', '0.03', '--weight_decay', '0.0', '--seed', '42', '--output_dir', '/home/webace/Tmp/test0229/safe-rlhf/output/sft', '--log_type', 'wandb', '--log_project', 'Safe-RLHF-SFT', '--zero_stage', '3', '--offload', 'all', '--bf16', 'True', '--tf32', 'True']
+[2024-02-29 19:29:28,331] [INFO] [launch.py:253:main] process 1149980 spawned with command: ['/data/Development/anaconda3/envs/py311/bin/python', '-u', '-m', 'safe_rlhf.finetune', '--local_rank=3', '--train_datasets', 'alpaca', '--model_name_or_path', '../llama-7b-hf', '--max_length', '512', '--trust_remote_code', 'True', '--epochs', '3', '--per_device_train_batch_size', '1', '--per_device_eval_batch_size', '1', '--gradient_accumulation_steps', '8', '--gradient_checkpointing', '--learning_rate', '2e-5', '--lr_scheduler_type', 'cosine', '--lr_warmup_ratio', '0.03', '--weight_decay', '0.0', '--seed', '42', '--output_dir', '/home/webace/Tmp/test0229/safe-rlhf/output/sft', '--log_type', 'wandb', '--log_project', 'Safe-RLHF-SFT', '--zero_stage', '3', '--offload', 'all', '--bf16', 'True', '--tf32', 'True']
+[2024-02-29 19:29:30,326] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2024-02-29 19:29:30,328] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2024-02-29 19:29:30,333] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2024-02-29 19:29:30,414] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2024-02-29 19:29:31,620] [INFO] [comm.py:637:init_distributed] cdb=None
+[2024-02-29 19:29:31,620] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+[2024-02-29 19:29:31,657] [INFO] [comm.py:637:init_distributed] cdb=None
+[2024-02-29 19:29:31,673] [INFO] [comm.py:637:init_distributed] cdb=None
+[2024-02-29 19:29:31,895] [INFO] [comm.py:637:init_distributed] cdb=None
+Set logger level to WARNING.
+Loading checkpoint shards: 100%|██████████| 33/33 [00:17<00:00,  1.88it/s]
+Loading checkpoint shards: 100%|██████████| 33/33 [00:17<00:00,  1.88it/s]
+Loading checkpoint shards: 100%|██████████| 33/33 [00:17<00:00,  1.88it/s]
+Loading checkpoint shards: 100%|██████████| 33/33 [00:17<00:00,  1.88it/s]
+You are using the default legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565
+You are using the default legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565
+You are using the default legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565
+You are using the default legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565
+Installed CUDA version 12.2 does not match the version torch was compiled with 12.1 but since the APIs are compatible, accepting this combination
+Using /home/webace/.cache/torch_extensions/py311_cu121 as PyTorch extensions root...
+Creating extension directory /home/webace/.cache/torch_extensions/py311_cu121/cpu_adam...
+Detected CUDA files, patching ldflags
+Emitting ninja build file /home/webace/.cache/torch_extensions/py311_cu121/cpu_adam/build.ninja...
+Building extension module cpu_adam...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+Installed CUDA version 12.2 does not match the version torch was compiled with 12.1 but since the APIs are compatible, accepting this combination
+Using /home/webace/.cache/torch_extensions/py311_cu121 as PyTorch extensions root...
+Installed CUDA version 12.2 does not match the version torch was compiled with 12.1 but since the APIs are compatible, accepting this combination
+Using /home/webace/.cache/torch_extensions/py311_cu121 as PyTorch extensions root...
+Installed CUDA version 12.2 does not match the version torch was compiled with 12.1 but since the APIs are compatible, accepting this combination
+Using /home/webace/.cache/torch_extensions/py311_cu121 as PyTorch extensions root...
+[1/4] /usr/local/cuda/bin/nvcc --generate-dependencies-with-compile --dependency-output custom_cuda_kernel.cuda.o.d -DTORCH_EXTENSION_NAME=cpu_adam -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1011\" -I/data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/deepspeed/ops/csrc/includes -I/usr/local/cuda/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/TH -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/THC -isystem /usr/local/cuda/include -isystem /data/Development/anaconda3/envs/py311/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=0 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr -gencode=arch=compute_86,code=compute_86 -gencode=arch=compute_86,code=sm_86 --compiler-options '-fPIC' -O3 --use_fast_math -std=c++17 -U__CUDA_NO_HALF_OPERATORS__ -U__CUDA_NO_HALF_CONVERSIONS__ -U__CUDA_NO_HALF2_OPERATORS__ --threads=8 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_86,code=compute_86 -DBF16_AVAILABLE -U__CUDA_NO_BFLOAT16_OPERATORS__ -U__CUDA_NO_BFLOAT162_OPERATORS__ -c /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/deepspeed/ops/csrc/common/custom_cuda_kernel.cu -o custom_cuda_kernel.cuda.o
+[2/4] c++ -MMD -MF cpu_adam_impl.o.d -DTORCH_EXTENSION_NAME=cpu_adam -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1011\" -I/data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/deepspeed/ops/csrc/includes -I/usr/local/cuda/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/TH -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/THC -isystem /usr/local/cuda/include -isystem /data/Development/anaconda3/envs/py311/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=0 -fPIC -std=c++17 -O3 -std=c++17 -g -Wno-reorder -L/usr/local/cuda/lib64 -lcudart -lcublas -g -march=native -fopenmp -D__AVX512__ -D__ENABLE_CUDA__ -DBF16_AVAILABLE -c /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/deepspeed/ops/csrc/adam/cpu_adam_impl.cpp -o cpu_adam_impl.o
+[3/4] c++ -MMD -MF cpu_adam.o.d -DTORCH_EXTENSION_NAME=cpu_adam -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1011\" -I/data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/deepspeed/ops/csrc/includes -I/usr/local/cuda/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/TH -isystem /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/include/THC -isystem /usr/local/cuda/include -isystem /data/Development/anaconda3/envs/py311/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=0 -fPIC -std=c++17 -O3 -std=c++17 -g -Wno-reorder -L/usr/local/cuda/lib64 -lcudart -lcublas -g -march=native -fopenmp -D__AVX512__ -D__ENABLE_CUDA__ -DBF16_AVAILABLE -c /data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/deepspeed/ops/csrc/adam/cpu_adam.cpp -o cpu_adam.o
+[4/4] c++ cpu_adam.o cpu_adam_impl.o custom_cuda_kernel.cuda.o -shared -lcurand -L/data/Development/anaconda3/envs/py311/lib/python3.11/site-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda/lib64 -lcudart -o cpu_adam.so
+Loading extension module cpu_adam...
+Time to load cpu_adam op: 31.080963611602783 seconds
+Loading extension module cpu_adam...
+Loading extension module cpu_adam...
+Time to load cpu_adam op: 31.015425443649292 seconds
+Time to load cpu_adam op: 31.019861459732056 seconds
+Loading extension module cpu_adam...
+Time to load cpu_adam op: 31.03505301475525 seconds
+Parameter Offload: Total persistent parameters: 266240 in 65 params
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+wandb: Tracking run with wandb version 0.16.3
+wandb: W&B syncing is set to `offline` in this directory.
+wandb: Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+***** Running training *****
+Training 1/3 epoch:   0%|          | 0/39003 [00:00<?, ?it/s]`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+Training 1/3 epoch (loss 1.1828):   0%|          | 115/39003 [09:28<53:15:37,  4.93s/it]
+```
+
+
+
+##### 8.pip安装mpi4py失败
+
+[Failed to build mpi4py ERROR: Could not build wheels for mpi4py, which is required to install pyproj-CSDN博客](https://blog.csdn.net/Clown_pan/article/details/128307006)
+
+用conda装
+
+
+
+#### to-do
+
+1、跑通RLHF过程
+
+2、仔细阅读代码，思考能不能改进or集成其它的安全强化学习算法进入代码中
+
+
